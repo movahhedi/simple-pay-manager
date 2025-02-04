@@ -2,5 +2,7 @@
 	"compilerOptions": {
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx",
+		"module": "Node16",
+		"lib": ["ESNext", "ES2015.Promise"]
 	}
 }
