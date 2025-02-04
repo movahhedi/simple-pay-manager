@@ -3,6 +3,6 @@
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx",
 		"module": "Node16",
-		"lib": ["ESNext", "ES2015.Promise"]
+		"lib": ["ESNext", "ES2015.Promise", "DOM"]
 	}
 }

@@ -4,6 +4,9 @@ import { serve } from "@hono/node-server";
 import { SqliteDialect, Kysely } from "kysely";
 import SQLite from "better-sqlite3";
 
+console.log("Hello");
+
+
 interface Database {
 	person: PersonTable;
 	record: RecordTable;
@@ -13,6 +16,7 @@ interface PersonTable {
 	id: number;
 	name: string;
 	shortName: string;
+	color: string;
 }
 
 interface RecordTable {
@@ -22,6 +26,7 @@ interface RecordTable {
 	toId: number;
 	date: string;
 	memo: string;
+	isPaid: number; // SQLite doesn't have boolean, using 0/1
 }
 
 // Initialize database connection
@@ -39,6 +44,7 @@ async function initDatabase() {
 		.addColumn("id", "integer", (col) => col.primaryKey().autoIncrement())
 		.addColumn("name", "text", (col) => col.notNull())
 		.addColumn("shortName", "text", (col) => col.notNull())
+		.addColumn("color", "text", (col) => col.notNull())
 		.execute();
 
 	await db.schema
@@ -50,6 +56,7 @@ async function initDatabase() {
 		.addColumn("toId", "integer", (col) => col.notNull().references("person.id"))
 		.addColumn("date", "text", (col) => col.notNull())
 		.addColumn("memo", "text", (col) => col.notNull())
+		.addColumn("isPaid", "integer", (col) => col.notNull().defaultTo(0))
 		.execute();
 }
 
@@ -98,38 +105,183 @@ const styles = {
 		color: 'white',
 		cursor: 'pointer',
 	},
+	badge: (color: string) => ({
+		backgroundColor: color,
+		color: 'white',
+		padding: '4px 8px',
+		borderRadius: '12px',
+		display: 'inline-block',
+		fontWeight: 'bold',
+	}),
+	actionButton: {
+		padding: '4px 8px',
+		borderRadius: '4px',
+		border: 'none',
+		cursor: 'pointer',
+		marginRight: '4px',
+		fontSize: '16px',
+	},
+	paidRecord: {
+		backgroundColor: '#e8fff0',
+		opacity: 0.8,
+	},
 };
+
+function generateDarkColor() {
+	const hue = Math.random() * 360;
+	return `hsl(${hue}, 60%, 35%)`; // 35% lightness makes it dark enough for white text
+}
 
 const Layout: FC = (props) => {
 	return (
 		<html>
 			<head>
-				<script>{`
-          async function submitForm(formId, endpoint) {
-            const form = document.getElementById(formId);
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData);
+				<meta charset="UTF-8" />
+				<script dangerouslySetInnerHTML={{
+					__html: `
+					function showMessage(text, isError = false) {
+						const msg = document.createElement('div');
+						msg.style.position = 'fixed';
+						msg.style.top = '20px';
+						msg.style.right = '20px';
+						msg.style.padding = '10px 20px';
+						msg.style.borderRadius = '4px';
+						msg.style.backgroundColor = isError ? '#ff4444' : '#44bb44';
+						msg.style.color = 'white';
+						msg.textContent = text;
+						document.body.appendChild(msg);
+						setTimeout(() => msg.remove(), 3000);
+					}
 
-            try {
-              const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-              });
+					async function submitForm(formId, endpoint) {
+						const form = document.getElementById(formId);
+						if (!form) return;
 
-              if (response.ok) {
-                window.location.reload();
-              }
-            } catch (error) {
-              console.error('Error:', error);
-            }
-          }
-        `}</script>
+						try {
+							const formData = new FormData(form);
+							const data = Object.fromEntries(formData);
+
+							const response = await fetch(endpoint, {
+								method: 'POST',
+								headers: {
+									'Content-Type': 'application/json',
+								},
+								body: JSON.stringify(data),
+							});
+
+							if (response.ok) {
+								showMessage('Added successfully!');
+								form.reset();
+								setTimeout(() => window.location.reload(), 1000);
+							} else {
+								throw new Error('Submit failed');
+							}
+						} catch (error) {
+							console.error('Error:', error);
+							showMessage('Error: ' + error.message, true);
+						}
+					}
+
+					async function handleAction(action, id, currentState = null) {
+						const confirmMessages = {
+							delete: "Are you sure you want to delete this record?",
+							togglePaid: currentState ?
+								"Mark this record as unpaid?" :
+								"Mark this record as paid?",
+						};
+
+						if (action === 'edit') {
+							const dialog = document.getElementById('editDialog');
+							const form = document.getElementById('editForm');
+							const record = JSON.parse(document.getElementById('record-'+id).dataset.record);
+
+							// Fill form with current values
+							form.elements.amount.value = record.amount;
+							form.elements.fromId.value = record.fromId;
+							form.elements.toId.value = record.toId;
+							form.elements.date.value = record.date;
+							form.elements.memo.value = record.memo;
+							form.dataset.recordId = id;
+
+							dialog.showModal();
+							return;
+						}
+
+						if (!confirm(confirmMessages[action])) return;
+
+						try {
+							const response = await fetch(\`/record/\${action}/\${id}\`, {
+								method: 'POST',
+							});
+
+							if (response.ok) {
+								window.location.reload();
+							} else {
+								throw new Error('Action failed');
+							}
+						} catch (error) {
+							showMessage('Error: ' + error.message, true);
+						}
+					}
+
+					async function submitEdit(event) {
+						event.preventDefault();
+						const form = event.target;
+						const id = form.dataset.recordId;
+
+						try {
+							const formData = new FormData(form);
+							const data = Object.fromEntries(formData);
+
+							const response = await fetch(\`/record/edit/\${id}\`, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify(data),
+							});
+
+							if (response.ok) {
+								document.getElementById('editDialog').close();
+								window.location.reload();
+							}
+						} catch (error) {
+							showMessage('Error: ' + error.message, true);
+						}
+					}
+				`
+				}}></script>
 			</head>
 			<body style={{ margin: 0, padding: 0, backgroundColor: '#f0f2f5', fontFamily: 'Arial, sans-serif' }}>
 				<div style={styles.container}>
 					{props.children}
 				</div>
+				<dialog id="editDialog" style={{
+					padding: '20px',
+					borderRadius: '8px',
+					border: '1px solid #ddd',
+				}}>
+					<form id="editForm" onsubmit="submitEdit(event)">
+						<h3>Edit Record</h3>
+						<div style={{ display: 'grid', gap: '10px' }}>
+							<select name="fromId" required style={styles.input}>
+								{props.people?.map(p => <option value={p.id}>{p.shortName}</option>)}
+							</select>
+							<select name="toId" required style={styles.input}>
+								{props.people?.map(p => <option value={p.id}>{p.shortName}</option>)}
+							</select>
+							<input name="amount" type="number" step="0.001" required style={styles.input} />
+							<input name="date" type="date" required style={styles.input} />
+							<input name="memo" required style={styles.input} />
+							<div>
+								<button type="submit" style={styles.button}>Save</button>
+								<button type="button" onclick="editDialog.close()" style={{
+									...styles.button,
+									backgroundColor: '#6c757d',
+									marginLeft: '8px',
+								}}>Cancel</button>
+							</div>
+						</div>
+					</form>
+				</dialog>
 			</body>
 		</html>
 	);
@@ -143,6 +295,7 @@ const app = new Hono()
 			.values({
 				name: body.name,
 				shortName: body.shortName,
+				color: generateDarkColor(),
 			})
 			.execute();
 		return c.json({ success: true });
@@ -161,11 +314,56 @@ const app = new Hono()
 			.execute();
 		return c.json({ success: true });
 	})
+	.post('/record/delete/:id', async (c) => {
+		const id = c.req.param('id');
+		await db.deleteFrom('record').where('id', '=', Number(id)).execute();
+		return c.json({ success: true });
+	})
+	.post('/record/togglePaid/:id', async (c) => {
+		const id = c.req.param('id');
+
+		// First get the current state
+		const record = await db
+			.selectFrom('record')
+			.select(['isPaid'])
+			.where('id', '=', Number(id))
+			.executeTakeFirst();
+
+		if (!record) return c.json({ success: false });
+
+		// Toggle the value
+		const newValue = record.isPaid === 1 ? 0 : 1;
+
+		// Update with new value
+		await db
+			.updateTable('record')
+			.set({ isPaid: newValue })
+			.where('id', '=', Number(id))
+			.execute();
+
+		return c.json({ success: true });
+		})
+	.post('/record/edit/:id', async (c) => {
+		const id = c.req.param('id');
+		const body = await c.req.json();
+		await db
+			.updateTable('record')
+			.set({
+				fromId: Number(body.fromId),
+				toId: Number(body.toId),
+				amount: Number(body.amount),
+				date: body.date,
+				memo: body.memo,
+			})
+			.where('id', '=', Number(id))
+			.execute();
+		return c.json({ success: true });
+	})
 	.get("/", async (c) => {
 		await initDatabase();
 
 		// Get all people
-		const people = await db.selectFrom("person").select(["id", "shortName"]).execute();
+		const people = await db.selectFrom("person").select(["id", "shortName", "color"]).execute();
 
 		// Calculate balances
 		const balances = await Promise.all(
@@ -185,6 +383,7 @@ const app = new Hono()
 				return {
 					shortName: person.shortName,
 					amount: Math.round(((fromSum?.sum || 0) - (toSum?.sum || 0)) * 1000) / 1000,
+					color: person.color,
 				};
 			})
 		);
@@ -199,8 +398,11 @@ const app = new Hono()
 				"record.amount",
 				"fromPerson.name as fromName",
 				"toPerson.name as toName",
+				"fromPerson.color as fromColor",
+				"toPerson.color as toColor",
 				"record.date",
 				"record.memo",
+				"record.isPaid",
 			])
 			.execute();
 
@@ -208,7 +410,12 @@ const app = new Hono()
 			<>
 				<section style={styles.section}>
 					<h2>Add Person</h2>
-					<form id="personForm" style={styles.form} onsubmit="event.preventDefault(); submitForm('personForm', '/person')">
+						<form
+							id="personForm"
+							style={styles.form}
+							onsubmit="event.preventDefault(); submitForm('personForm', '/person')"
+							method="POST"
+						>
 						<input style={styles.input} name="name" placeholder="Name" required />
 						<input style={styles.input} name="shortName" placeholder="Short Name" required />
 						<button style={styles.button} type="submit">Add Person</button>
@@ -217,11 +424,18 @@ const app = new Hono()
 
 				<section style={styles.section}>
 					<h2>Add Record</h2>
-					<form id="recordForm" style={styles.form} onsubmit="event.preventDefault(); submitForm('recordForm', '/record')">
+						<form
+							id="recordForm"
+							style={styles.form}
+							onsubmit="event.preventDefault(); submitForm('recordForm', '/record')"
+							method="POST"
+						>
 						<select style={styles.input} name="fromId" required>
+							<option value="">Select From</option>
 							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
 						</select>
 						<select style={styles.input} name="toId" required>
+							<option value="">Select To</option>
 							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
 						</select>
 						<input style={styles.input} name="amount" type="number" step="0.001" placeholder="Amount" required />
@@ -235,7 +449,13 @@ const app = new Hono()
 					<table style={styles.table}>
 						<thead>
 							<tr>
-								{balances.map(p => <th style={styles.th}>{p.shortName}</th>)}
+								{balances.map(p => (
+									<th style={styles.th}>
+										<span style={styles.badge(p.color)}>
+											{p.shortName}
+										</span>
+									</th>
+								))}
 							</tr>
 						</thead>
 						<tbody>
@@ -250,23 +470,57 @@ const app = new Hono()
 					<table style={styles.table}>
 						<thead>
 							<tr>
-								<th style={styles.th}>آی‌دی</th>
-								<th style={styles.th}>از</th>
-								<th style={styles.th}>به</th>
-								<th style={styles.th}>مبلغ</th>
-								<th style={styles.th}>تاریخ</th>
-								<th style={styles.th}>توضیحات</th>
+								<th style={styles.th}>ID</th>
+								<th style={styles.th}>From</th>
+								<th style={styles.th}>To</th>
+								<th style={styles.th}>Amount</th>
+								<th style={styles.th}>Date</th>
+								<th style={styles.th}>Memo</th>
+								<th style={styles.th}>Actions</th>
 							</tr>
 						</thead>
 						<tbody>
 							{records.map(record => (
-								<tr>
+								<tr id={`record-${record.id}`}
+									data-record={JSON.stringify(record)}
+									style={record.isPaid ? styles.paidRecord : undefined}>
 									<td style={styles.td}>{record.id}</td>
-									<td style={styles.td}>{record.fromName}</td>
-									<td style={styles.td}>{record.toName}</td>
+									<td style={styles.td}>
+										<span style={styles.badge(record.fromColor)}>
+											{record.fromName}
+										</span>
+									</td>
+									<td style={styles.td}>
+										<span style={styles.badge(record.toColor)}>
+											{record.toName}
+										</span>
+									</td>
 									<td style={styles.td}>{record.amount}</td>
 									<td style={styles.td}>{record.date}</td>
 									<td style={styles.td}>{record.memo}</td>
+									<td style={styles.td}>
+										<button
+											onclick={`handleAction('togglePaid', ${record.id}, ${record.isPaid})`}
+											style={styles.actionButton}
+											title={record.isPaid ? "Mark as Unpaid" : "Mark as Paid"}
+										>
+											{record.isPaid ? '❌' : '✅'}
+										</button>
+										<button
+											onclick={`handleAction('edit', ${record.id})`}
+											style={styles.actionButton}
+											title="Edit"
+										>
+											✏️
+										</button>
+										<button
+											onclick={`handleAction('delete', ${record.id})`}
+											style={styles.actionButton}
+											title="Delete"
+										>
+											🗑️
+										</button>
+									</td>
 								</tr>
 							))}
 						</tbody>
@@ -275,7 +529,7 @@ const app = new Hono()
 			</>
 		);
 
-		return c.html(<Layout>{pageContent}</Layout>);
+		return c.html(<Layout people={people}>{pageContent}</Layout>);
 	});
 
 serve({
