@@ -15,7 +15,6 @@ interface Database {
 interface PersonTable {
 	id: number;
 	name: string;
-	shortName: string;
 	color: string;
 }
 
@@ -43,7 +42,6 @@ async function initDatabase() {
 		.ifNotExists()
 		.addColumn("id", "integer", (col) => col.primaryKey().autoIncrement())
 		.addColumn("name", "text", (col) => col.notNull())
-		.addColumn("shortName", "text", (col) => col.notNull())
 		.addColumn("color", "text", (col) => col.notNull())
 		.execute();
 
@@ -109,7 +107,7 @@ const styles = {
 		backgroundColor: color,
 		color: 'white',
 		padding: '4px 8px',
-		borderRadius: '12px',
+		borderRadius: '20px',
 		display: 'inline-block',
 		fontWeight: 'bold',
 	}),
@@ -132,13 +130,19 @@ function generateDarkColor() {
 	return `hsl(${hue}, 60%, 35%)`; // 35% lightness makes it dark enough for white text
 }
 
-const Layout: FC = (props) => {
-	return (
-		<html>
-			<head>
-				<meta charset="UTF-8" />
-				<script dangerouslySetInnerHTML={{
-					__html: `
+function formatNumber(num: number) {
+	return num.toLocaleString('en-US', {
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 3
+	});
+}
+
+const Layout: FC = (props) => (
+	<html>
+		<head>
+			<meta charset="UTF-8" />
+			<script dangerouslySetInnerHTML={{
+				__html: `
 					function showMessage(text, isError = false) {
 						const msg = document.createElement('div');
 						msg.style.position = 'fixed';
@@ -247,45 +251,101 @@ const Layout: FC = (props) => {
 							showMessage('Error: ' + error.message, true);
 						}
 					}
+
+					async function handlePersonEdit(id) {
+						const person = JSON.parse(document.getElementById('person-'+id).dataset.person);
+						const dialog = document.getElementById('editPersonDialog');
+						const form = document.getElementById('editPersonForm');
+
+						form.elements.name.value = person.name;
+						form.elements.color.value = person.color;
+						form.dataset.personId = id;
+
+						dialog.showModal();
+					}
+
+					async function submitPersonEdit(event) {
+						event.preventDefault();
+						const form = event.target;
+						const id = form.dataset.personId;
+
+						try {
+							const formData = new FormData(form);
+							const data = Object.fromEntries(formData);
+
+							const response = await fetch(\`/person/edit/\${id}\`, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify(data),
+							});
+
+							if (response.ok) {
+								document.getElementById('editPersonDialog').close();
+								window.location.reload();
+							}
+						} catch (error) {
+							showMessage('Error: ' + error.message, true);
+						}
+					}
 				`
-				}}></script>
-			</head>
-			<body style={{ margin: 0, padding: 0, backgroundColor: '#f0f2f5', fontFamily: 'Arial, sans-serif' }}>
-				<div style={styles.container}>
-					{props.children}
-				</div>
-				<dialog id="editDialog" style={{
-					padding: '20px',
-					borderRadius: '8px',
-					border: '1px solid #ddd',
-				}}>
-					<form id="editForm" onsubmit="submitEdit(event)">
-						<h3>Edit Record</h3>
-						<div style={{ display: 'grid', gap: '10px' }}>
-							<select name="fromId" required style={styles.input}>
-								{props.people?.map(p => <option value={p.id}>{p.shortName}</option>)}
-							</select>
-							<select name="toId" required style={styles.input}>
-								{props.people?.map(p => <option value={p.id}>{p.shortName}</option>)}
-							</select>
-							<input name="amount" type="number" step="0.001" required style={styles.input} />
-							<input name="date" type="date" required style={styles.input} />
-							<input name="memo" required style={styles.input} />
-							<div>
-								<button type="submit" style={styles.button}>Save</button>
-								<button type="button" onclick="editDialog.close()" style={{
-									...styles.button,
-									backgroundColor: '#6c757d',
-									marginLeft: '8px',
-								}}>Cancel</button>
-							</div>
+			}}></script>
+		</head>
+		<body style={{ margin: 0, padding: 0, backgroundColor: '#f0f2f5', fontFamily: '"Segoe UI", sans-serif' }}>
+			<div style={styles.container}>
+				{props.children}
+			</div>
+			<dialog id="editPersonDialog" style={{
+				padding: '20px',
+				borderRadius: '8px',
+				border: '1px solid #ddd',
+			}}>
+				<form id="editPersonForm" onsubmit="submitPersonEdit(event)">
+					<h3>Edit Person</h3>
+					<div style={{ display: 'grid', gap: '10px' }}>
+						<input name="name" required style={styles.input} placeholder="Name" />
+						<input name="color" type="color" required style={styles.input} />
+						<div>
+							<button type="submit" style={styles.button}>Save</button>
+							<button type="button" onclick="editPersonDialog.close()" style={{
+								...styles.button,
+								backgroundColor: '#6c757d',
+								marginLeft: '8px',
+							}}>Cancel</button>
 						</div>
-					</form>
-				</dialog>
-			</body>
-		</html>
-	);
-};
+					</div>
+				</form>
+			</dialog>
+			<dialog id="editDialog" style={{
+				padding: '20px',
+				borderRadius: '8px',
+				border: '1px solid #ddd',
+			}}>
+				<form id="editForm" onsubmit="submitEdit(event)">
+					<h3>Edit Record</h3>
+					<div style={{ display: 'grid', gap: '10px' }}>
+						<select name="fromId" required style={styles.input}>
+							{props.people?.map(p => <option value={p.id}>{p.name}</option>)}
+						</select>
+						<select name="toId" required style={styles.input}>
+							{props.people?.map(p => <option value={p.id}>{p.name}</option>)}
+						</select>
+						<input name="amount" type="number" step="0.001" required style={styles.input} />
+						<input name="date" type="date" required style={styles.input} />
+						<input name="memo" required style={styles.input} />
+						<div>
+							<button type="submit" style={styles.button}>Save</button>
+							<button type="button" onclick="editDialog.close()" style={{
+								...styles.button,
+								backgroundColor: '#6c757d',
+								marginLeft: '8px',
+							}}>Cancel</button>
+						</div>
+					</div>
+				</form>
+			</dialog>
+		</body>
+	</html>
+);
 
 const app = new Hono()
 	.post('/person', async (c) => {
@@ -294,9 +354,21 @@ const app = new Hono()
 			.insertInto('person')
 			.values({
 				name: body.name,
-				shortName: body.shortName,
 				color: generateDarkColor(),
 			})
+			.execute();
+		return c.json({ success: true });
+	})
+	.post('/person/edit/:id', async (c) => {
+		const id = c.req.param('id');
+		const body = await c.req.json();
+		await db
+			.updateTable('person')
+			.set({
+				name: body.name,
+				color: body.color,
+			})
+			.where('id', '=', Number(id))
 			.execute();
 		return c.json({ success: true });
 	})
@@ -363,7 +435,7 @@ const app = new Hono()
 		await initDatabase();
 
 		// Get all people
-		const people = await db.selectFrom("person").select(["id", "shortName", "color"]).execute();
+		const people = await db.selectFrom("person").select(["id", "name", "color"]).execute();
 
 		// Calculate balances
 		const balances = await Promise.all(
@@ -380,9 +452,11 @@ const app = new Hono()
 					.where("toId", "=", person.id)
 					.executeTakeFirst();
 
+				const amount = Math.round(((Number(fromSum?.sum) || 0) - Number(toSum?.sum || 0)) * 1000) / 1000;
 				return {
-					shortName: person.shortName,
-					amount: Math.round(((Number(fromSum?.sum) || 0) - Number(toSum?.sum || 0)) * 1000) / 1000,
+					id: person.id,
+					name: person.name,
+					amount: formatNumber(amount),
 					color: person.color,
 				};
 			})
@@ -417,7 +491,6 @@ const app = new Hono()
 							method="post"
 						>
 						<input style={styles.input} name="name" placeholder="Name" required />
-						<input style={styles.input} name="shortName" placeholder="Short Name" required />
 						<button style={styles.button} type="submit">Add Person</button>
 					</form>
 				</section>
@@ -432,11 +505,11 @@ const app = new Hono()
 						>
 						<select style={styles.input} name="fromId" required>
 							<option value="">Select From</option>
-							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
+							{people.map(p => <option value={p.id}>{p.name}</option>)}
 						</select>
 						<select style={styles.input} name="toId" required>
 							<option value="">Select To</option>
-							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
+							{people.map(p => <option value={p.id}>{p.name}</option>)}
 						</select>
 						<input style={styles.input} name="amount" type="number" step="0.001" placeholder="Amount" required />
 						<input style={styles.input} name="date" type="date" required />
@@ -451,8 +524,14 @@ const app = new Hono()
 							<tr>
 								{balances.map(p => (
 									<th style={styles.th}>
-										<span style={styles.badge(p.color)}>
-											{p.shortName}
+										<span
+											id={`person-${p.id}`}
+											data-person={JSON.stringify(p)}
+											style={{...styles.badge(p.color), cursor: 'pointer'}}
+											onclick={`handlePersonEdit(${p.id})`}
+											title="Click to edit"
+										>
+											{p.name}
 										</span>
 									</th>
 								))}
@@ -495,7 +574,7 @@ const app = new Hono()
 											{record.toName}
 										</span>
 									</td>
-									<td style={styles.td}>{record.amount}</td>
+									<td style={styles.td}>{formatNumber(record.amount)}</td>
 									<td style={styles.td}>{record.date}</td>
 									<td style={styles.td}>{record.memo}</td>
 									<td style={styles.td}>
