@@ -382,7 +382,7 @@ const app = new Hono()
 
 				return {
 					shortName: person.shortName,
-					amount: Math.round(((fromSum?.sum || 0) - (toSum?.sum || 0)) * 1000) / 1000,
+					amount: Math.round(((Number(fromSum?.sum) || 0) - Number(toSum?.sum || 0)) * 1000) / 1000,
 					color: person.color,
 				};
 			})
@@ -414,7 +414,7 @@ const app = new Hono()
 							id="personForm"
 							style={styles.form}
 							onsubmit="event.preventDefault(); submitForm('personForm', '/person')"
-							method="POST"
+							method="post"
 						>
 						<input style={styles.input} name="name" placeholder="Name" required />
 						<input style={styles.input} name="shortName" placeholder="Short Name" required />
@@ -428,7 +428,7 @@ const app = new Hono()
 							id="recordForm"
 							style={styles.form}
 							onsubmit="event.preventDefault(); submitForm('recordForm', '/record')"
-							method="POST"
+							method="post"
 						>
 						<select style={styles.input} name="fromId" required>
 							<option value="">Select From</option>
