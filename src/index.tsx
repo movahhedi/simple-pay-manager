@@ -53,109 +53,230 @@ async function initDatabase() {
 		.execute();
 }
 
+const styles = {
+	container: {
+		padding: '20px',
+		maxWidth: '1200px',
+		margin: '0 auto',
+	},
+	section: {
+		background: '#fff',
+		borderRadius: '8px',
+		padding: '20px',
+		marginBottom: '20px',
+		boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+	},
+	table: {
+		width: '100%',
+		borderCollapse: 'collapse',
+		marginBottom: '20px',
+	},
+	th: {
+		padding: '12px',
+		backgroundColor: '#f5f5f5',
+		borderBottom: '2px solid #ddd',
+	},
+	td: {
+		padding: '12px',
+		borderBottom: '1px solid #ddd',
+	},
+	form: {
+		display: 'flex',
+		gap: '10px',
+		alignItems: 'center',
+	},
+	input: {
+		padding: '8px',
+		borderRadius: '4px',
+		border: '1px solid #ddd',
+	},
+	button: {
+		padding: '8px 16px',
+		borderRadius: '4px',
+		border: 'none',
+		backgroundColor: '#007bff',
+		color: 'white',
+		cursor: 'pointer',
+	},
+};
+
 const Layout: FC = (props) => {
 	return (
 		<html>
-			<body>{props.children}</body>
+			<head>
+				<script>{`
+          async function submitForm(formId, endpoint) {
+            const form = document.getElementById(formId);
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData);
+
+            try {
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+              });
+
+              if (response.ok) {
+                window.location.reload();
+              }
+            } catch (error) {
+              console.error('Error:', error);
+            }
+          }
+        `}</script>
+			</head>
+			<body style={{ margin: 0, padding: 0, backgroundColor: '#f0f2f5', fontFamily: 'Arial, sans-serif' }}>
+				<div style={styles.container}>
+					{props.children}
+				</div>
+			</body>
 		</html>
 	);
 };
 
-const app = new Hono().get("/", async (c) => {
-	await initDatabase();
+const app = new Hono()
+	.post('/person', async (c) => {
+		const body = await c.req.json();
+		await db
+			.insertInto('person')
+			.values({
+				name: body.name,
+				shortName: body.shortName,
+			})
+			.execute();
+		return c.json({ success: true });
+	})
+	.post('/record', async (c) => {
+		const body = await c.req.json();
+		await db
+			.insertInto('record')
+			.values({
+				fromId: Number(body.fromId),
+				toId: Number(body.toId),
+				amount: Number(body.amount),
+				date: body.date,
+				memo: body.memo,
+			})
+			.execute();
+		return c.json({ success: true });
+	})
+	.get("/", async (c) => {
+		await initDatabase();
 
-	// Get all people
-	const people = await db.selectFrom("person").select(["id", "shortName"]).execute();
+		// Get all people
+		const people = await db.selectFrom("person").select(["id", "shortName"]).execute();
 
-	// Calculate balances
-	const balances = await Promise.all(
-		people.map(async (person) => {
-			const fromSum = await db
-				.selectFrom("record")
-				.select((eb) => eb.fn.sum("amount").as("sum"))
-				.where("fromId", "=", person.id)
-				.executeTakeFirst();
+		// Calculate balances
+		const balances = await Promise.all(
+			people.map(async (person) => {
+				const fromSum = await db
+					.selectFrom("record")
+					.select((eb) => eb.fn.sum("amount").as("sum"))
+					.where("fromId", "=", person.id)
+					.executeTakeFirst();
 
-			const toSum = await db
-				.selectFrom("record")
-				.select((eb) => eb.fn.sum("amount").as("sum"))
-				.where("toId", "=", person.id)
-				.executeTakeFirst();
+				const toSum = await db
+					.selectFrom("record")
+					.select((eb) => eb.fn.sum("amount").as("sum"))
+					.where("toId", "=", person.id)
+					.executeTakeFirst();
 
-			return {
-				shortName: person.shortName,
-				amount: Math.round(((fromSum?.sum || 0) - (toSum?.sum || 0)) * 1000) / 1000,
-			};
-		})
-	);
+				return {
+					shortName: person.shortName,
+					amount: Math.round(((fromSum?.sum || 0) - (toSum?.sum || 0)) * 1000) / 1000,
+				};
+			})
+		);
 
-	// Get all records
-	const records = await db
-		.selectFrom("record")
-		.innerJoin("person as fromPerson", "fromPerson.id", "record.fromId")
-		.innerJoin("person as toPerson", "toPerson.id", "record.toId")
-		.select([
-			"record.id",
-			"record.amount",
-			"fromPerson.name as fromName",
-			"toPerson.name as toName",
-			"record.date",
-			"record.memo",
-		])
-		.execute();
+		// Get all records
+		const records = await db
+			.selectFrom("record")
+			.innerJoin("person as fromPerson", "fromPerson.id", "record.fromId")
+			.innerJoin("person as toPerson", "toPerson.id", "record.toId")
+			.select([
+				"record.id",
+				"record.amount",
+				"fromPerson.name as fromName",
+				"toPerson.name as toName",
+				"record.date",
+				"record.memo",
+			])
+			.execute();
 
-	const pageContent = (
-		<>
-			<section>
-				<table>
-					<thead>
-						<tr>
-							{balances.map((p) => (
-								<th>{p.shortName}</th>
-							))}
-						</tr>
-					</thead>
-					<tbody>
-						<tr>
-							{balances.map((p) => (
-								<td>{p.amount}</td>
-							))}
-						</tr>
-					</tbody>
-				</table>
-			</section>
+		const pageContent = (
+			<>
+				<section style={styles.section}>
+					<h2>Add Person</h2>
+					<form id="personForm" style={styles.form} onsubmit="event.preventDefault(); submitForm('personForm', '/person')">
+						<input style={styles.input} name="name" placeholder="Name" required />
+						<input style={styles.input} name="shortName" placeholder="Short Name" required />
+						<button style={styles.button} type="submit">Add Person</button>
+					</form>
+				</section>
 
-			<section>
-				<table>
-					<thead>
-						<tr>
-							<th>آی‌دی</th>
-							<th>از</th>
-							<th>به</th>
-							<th>مبلغ</th>
-							<th>تاریخ</th>
-							<th>توضیحات</th>
-						</tr>
-					</thead>
-					<tbody>
-						{records.map((record) => (
+				<section style={styles.section}>
+					<h2>Add Record</h2>
+					<form id="recordForm" style={styles.form} onsubmit="event.preventDefault(); submitForm('recordForm', '/record')">
+						<select style={styles.input} name="fromId" required>
+							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
+						</select>
+						<select style={styles.input} name="toId" required>
+							{people.map(p => <option value={p.id}>{p.shortName}</option>)}
+						</select>
+						<input style={styles.input} name="amount" type="number" step="0.001" placeholder="Amount" required />
+						<input style={styles.input} name="date" type="date" required />
+						<input style={styles.input} name="memo" placeholder="Memo" required />
+						<button style={styles.button} type="submit">Add Record</button>
+					</form>
+				</section>
+
+				<section style={styles.section}>
+					<table style={styles.table}>
+						<thead>
 							<tr>
-								<td>{record.id}</td>
-								<td>{record.fromName}</td>
-								<td>{record.toName}</td>
-								<td>{record.amount}</td>
-								<td>{record.date}</td>
-								<td>{record.memo}</td>
+								{balances.map(p => <th style={styles.th}>{p.shortName}</th>)}
 							</tr>
-						))}
-					</tbody>
-				</table>
-			</section>
-		</>
-	);
+						</thead>
+						<tbody>
+							<tr>
+								{balances.map(p => <td style={styles.td}>{p.amount}</td>)}
+							</tr>
+						</tbody>
+					</table>
+				</section>
 
-	return c.html(<Layout>{pageContent}</Layout>);
-});
+				<section style={styles.section}>
+					<table style={styles.table}>
+						<thead>
+							<tr>
+								<th style={styles.th}>آی‌دی</th>
+								<th style={styles.th}>از</th>
+								<th style={styles.th}>به</th>
+								<th style={styles.th}>مبلغ</th>
+								<th style={styles.th}>تاریخ</th>
+								<th style={styles.th}>توضیحات</th>
+							</tr>
+						</thead>
+						<tbody>
+							{records.map(record => (
+								<tr>
+									<td style={styles.td}>{record.id}</td>
+									<td style={styles.td}>{record.fromName}</td>
+									<td style={styles.td}>{record.toName}</td>
+									<td style={styles.td}>{record.amount}</td>
+									<td style={styles.td}>{record.date}</td>
+									<td style={styles.td}>{record.memo}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</section>
+			</>
+		);
+
+		return c.html(<Layout>{pageContent}</Layout>);
+	});
 
 serve({
 	fetch: app.fetch,
